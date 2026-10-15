@@ -484,7 +484,7 @@ var S=blank();
 try{ var raw=localStorage.getItem(KEY); if(raw) S=norm(JSON.parse(raw)); }catch(e){}
 
 var PAGE=window.PAGE_MODE==='teacher'?'teacher':'student';
-var SHEET_URL=(typeof window.SHEET_URL==='string'&&/^https:\/\/script\.google(usercontent)?\.com\//.test(window.SHEET_URL.trim()))?window.SHEET_URL.trim():'';
+var SHEET_URL=(typeof window.SHEET_URL==='string'&&/^(https:\/\/script\.google(usercontent)?\.com\/|\/api\/)/.test(window.SHEET_URL.trim()))?window.SHEET_URL.trim():'';
 var isTeacher=false, mode=SHEET_URL?'cloud':'local';
 var refreshers=[];
 var tabBtns={}, panels={};
@@ -495,6 +495,19 @@ try{ PIN=localStorage.getItem(KEY+'-pin')||''; OWNER=localStorage.getItem(KEY+'-
 function api(body){
   return fetch(SHEET_URL,{method:'POST',body:JSON.stringify(body)}).then(function(r){ return r.json(); });
 }
+/* 개발자 도구 단축키·오른쪽 클릭 막기 */
+(function(){
+  document.addEventListener('keydown',function(e){
+    var k=(e.key||'').toLowerCase(), c=e.ctrlKey||e.metaKey;
+    if(e.key==='F12'||(c&&e.shiftKey&&(k==='i'||k==='j'||k==='c'||k==='k'))||(c&&e.altKey&&(k==='i'||k==='j'||k==='c'))||(c&&(k==='u'||k==='s'))){
+      e.preventDefault(); e.stopPropagation(); return false;
+    }
+  },true);
+  document.addEventListener('contextmenu',function(e){
+    var t=e.target; if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA')) return;
+    e.preventDefault();
+  });
+})();
 function validName(){ return /^\d{4}[가-힣]{2,5}$/.test(S.name); }
 function validPin(){ return /^\d{4}$/.test(PIN); }
 function idKey(){ return S.name+'|'+PIN; }
@@ -1611,7 +1624,7 @@ function buildDash(){
     root.replaceChildren();
     root.append(h('div',{class:'block'},h('h2',{},'학생 기록 현황'),
       h('p',{class:'goal'},'학번 앞 두 자리로 학년과 반을 나눕니다. 예: 3401김유진 → 3학년 4반 1번'+(errText?' ('+errText+')':'')),
-      h('p',{class:'goal'},SHEET_URL?'저장 방식: 구글 시트 (학생 기록이 자동으로 모입니다)':'저장 방식: 제출 코드 (구글 시트가 연결되지 않았습니다. 학생이 보낸 제출 코드를 아래 "제출 코드로 추가"에 붙여 넣으면 이 컴퓨터에 모입니다)'),
+      h('p',{class:'goal'},SHEET_URL?(/^\/api\//.test(SHEET_URL)?'저장 방식: 사이트 저장소 (학생 기록이 자동으로 모입니다)':'저장 방식: 구글 시트 (학생 기록이 자동으로 모입니다)'):'저장 방식: 제출 코드 (구글 시트가 연결되지 않았습니다. 학생이 보낸 제출 코드를 아래 "제출 코드로 추가"에 붙여 넣으면 이 컴퓨터에 모입니다)'),
       h('div',{class:'ctrl',style:'margin-top:10px'},refreshBtn,extraTools,stamp)));
     if(!records.length){
       root.append(h('div',{class:'block'},h('h2',{},'아직 기록이 없습니다'),
@@ -1800,10 +1813,10 @@ function startTeacher(){
       return Promise.resolve(true);
     }
     return api({action:'list',id:ID,password:PASS}).then(function(res){
-      if(!res||!res.ok){ if(first) msg.textContent=res&&res.error==='password'?'구글 시트 코드(Code.gs)의 아이디·비밀번호가 이 페이지와 다릅니다.':'기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.'; else dash.error(); return false; }
+      if(!res||!res.ok){ if(first) msg.textContent=res&&res.error==='password'?(/^\/api\//.test(SHEET_URL)?'저장소의 교사 계정 설정(TEACHER_HASH)이 이 페이지와 다릅니다.':'구글 시트 코드(Code.gs)의 아이디·비밀번호가 이 페이지와 다릅니다.'):'기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.'; else dash.error(); return false; }
       dash.set(res.rows.map(function(x){ return {id:x.name,pin:x.pin,rec:norm(x.rec)}; }),Date.now());
       return true;
-    }).catch(function(){ if(first) msg.textContent='구글 저장소에 연결하지 못했습니다. 인터넷 연결과 config.js 주소를 확인해 주세요.'; else dash.error(); return false; });
+    }).catch(function(){ if(first) msg.textContent='저장소에 연결하지 못했습니다. 인터넷 연결과 config.js 주소를 확인해 주세요.'; else dash.error(); return false; });
   }
   function enter(){
     gate.hidden=true; dash.root.hidden=false;
