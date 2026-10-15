@@ -5,7 +5,8 @@
 //   TEACHER_HASH  (계정설정.html 에서 만든 64자리 값, 따옴표 없이)
 const crypto = require('crypto');
 
-const KEY = 'chordlab:records';
+const KEY = 'chordlab:records';      // 선생님께 제출한 기록
+const DKEY = 'chordlab:drafts';      // 로그인한 학생이 하던 기록(자동 저장)
 const URL_ = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
 const TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 
@@ -32,6 +33,14 @@ function teacherOk(req) {
   return crypto.timingSafeEqual(a, Buffer.from(h));
 }
 const validName = (n) => /^\d{4}[가-힣]{2,5}$/.test(n);
+// 학생 번호는 처음 로그인(또는 제출)할 때 정해진다
+async function pinOf(name) {
+  for (const k of [KEY, DKEY]) {
+    const v = await redis(['HGET', k, name]);
+    if (v) { try { const p = JSON.parse(v).pin; if (p) return p; } catch (e) {} }
+  }
+  return '';
+}
 
 module.exports = async (request, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -43,6 +52,48 @@ module.exports = async (request, res) => {
   req = req || {};
 
   try {
+    if (req.action === 'draftLoad' || req.action === 'draftSave') {
+      const name = String(req.name || '').trim();
+      const pin = String(req.pin || '');
+      if (!validName(name) || !/^\d{4}$/.test(pin)) return res.json({ ok: false, error: 'name' });
+      const known = await pinOf(name);
+      if (known && known !== pin) return res.json({ ok: false, error: 'pin' });
+      if (req.action === 'draftLoad') {
+        const v = await redis(['HGET', DKEY, name]);
+        let rec = null;
+        if (v) { try { rec = JSON.parse(v).rec; } catch (e) {} }
+        if (!known) await redis(['HSET', DKEY, name, JSON.stringify({ pin, t: Date.now(), rec: null })]);
+        return res.json({ ok: true, rec });
+      }
+      const json = JSON.stringify({ pin, t: Date.now(), rec: req.rec || {} });
+      if (json.length > 100000) return res.json({ ok: false, error: 'size' });
+      await redis(['HSET', DKEY, name, json]);
+      return res.json({ ok: true });
+    }
+
+    if (req.action === 'submit') {
+      const name = String(req.name || '').trim();
+      const pin = String(req.pin || '');
+      const tab = String(req.tab || '');
+      if (!validName(name) || !/^\d{4}$/.test(pin)) return res.json({ ok: false, error: 'name' });
+      if (!/^t[1-5]$/.test(tab)) return res.json({ ok: false, error: 'tab' });
+      const known = await pinOf(name);
+      if (known && known !== pin) return res.json({ ok: false, error: 'pin' });
+      const cur = await redis(['HGET', KEY, name]);
+      const row = cur ? JSON.parse(cur) : null;
+      const rec = (row && row.rec) || {};
+      const at = Date.now();
+      rec.name = name;
+      rec[tab] = req.data || {};
+      rec.sub = rec.sub || {};
+      rec.sub[tab] = at;
+      rec.updatedAt = at;
+      const json = JSON.stringify({ pin, t: at, rec });
+      if (json.length > 100000) return res.json({ ok: false, error: 'size' });
+      await redis(['HSET', KEY, name, json]);
+      return res.json({ ok: true, at });
+    }
+
     if (req.action === 'save' || req.action === 'load') {
       const name = String(req.name || '').trim();
       const pin = String(req.pin || '');
