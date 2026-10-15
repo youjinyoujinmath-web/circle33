@@ -196,6 +196,11 @@ details.stu summary::-webkit-details-marker{display:none}
 .cmp td,.cmp th{text-align:right}
 .cmp tr.click{cursor:pointer}
 .cmp tr.click:hover td{background:var(--bg)}
+.subbox{border-color:var(--accent)}
+.subbox.subok{border-color:var(--ok);background:var(--okbg)}
+.subbox.subok .goal{color:var(--ok);font-weight:500}
+.subbox.subwarn{border-color:var(--alt);background:var(--warnbg)}
+.subbox.subwarn .goal{color:var(--warn);font-weight:500}
 .proofpage{max-width:780px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
 .pagebar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between}
 .crumb{font-size:13px;color:var(--muted)}
@@ -219,9 +224,12 @@ details.stu summary::-webkit-details-marker{display:none}
       <p class="sub">중3 수학 · 원과 현의 성질 · 점을 끌어 보며 직접 발견해 보세요</p>
     </div>
     <div class="who">
-      <label class="lbl" for="name">이름과 나만의 번호</label>
-      <div class="row"><input id="name" type="text" maxlength="12" placeholder="학번이름 (예: 3401김유진)" autocomplete="off" aria-describedby="namehint"><input id="pin" type="text" inputmode="numeric" maxlength="4" placeholder="번호 4자리" autocomplete="off" aria-label="나만의 번호 4자리" aria-describedby="namehint" style="width:110px;flex:none;font-family:var(--font-mono)"></div>
-      <p class="sub" id="namehint" style="margin:0">학번이름과, 내가 정한 숫자 4자리를 써 주세요. 다른 기기에서 이어 할 때 같은 번호가 필요해요.</p>
+      <div id="loginbox">
+        <label class="lbl" for="name">로그인</label>
+        <div class="row"><input id="name" type="text" maxlength="12" placeholder="학번이름 (예: 3401김유진)" autocomplete="off" aria-describedby="namehint"><input id="pin" type="password" inputmode="numeric" maxlength="4" placeholder="번호 4자리" autocomplete="off" aria-label="나만의 번호 4자리" aria-describedby="namehint" style="width:104px;flex:none;font-family:var(--font-mono)"><button class="btn primary" id="loginbtn" type="button" style="flex:none">로그인</button></div>
+        <p class="sub" id="namehint" style="margin:0">처음이면 내가 쓸 숫자 4자리를 정해서 로그인하세요. 다음부터 같은 번호로 로그인하면 이어서 할 수 있어요.</p>
+      </div>
+      <div id="loggedbox" class="row" hidden><span class="lbl" style="margin:0">로그인</span><b id="whoname" style="font-size:16px"></b><button class="btn" id="logoutbtn" type="button" style="margin-left:auto">로그아웃</button></div>
       <div class="sync s-wait" id="sync"><i></i><span id="synctxt">연결 중</span></div>
     </div>
   </header>
@@ -455,7 +463,8 @@ function blank(){
     t2:{rows:[],ex:[],q:{},note:'',proof:''},
     t3:{pairs:[],q:{},note:'',proof:''},
     t4:{pts:[],q:{},note:'',proof:''},
-    t5:{rows:[],q:{},note:'',proof:''}};
+    t5:{rows:[],q:{},note:'',proof:''},
+    sub:{},subHash:{}};
 }
 function norm(o){
   var b=blank(); o=o||{};
@@ -472,6 +481,8 @@ function norm(o){
   if(!Array.isArray(b.t2.ex)) b.t2.ex=[];
   if(!Array.isArray(b.t4.pts)) b.t4.pts=[];
   if(!Array.isArray(b.t5.rows)) b.t5.rows=[];
+  b.sub=(o.sub&&typeof o.sub==='object')?o.sub:{};
+  b.subHash=(o.subHash&&typeof o.subHash==='object')?o.subHash:{};
   return b;
 }
 function isDone(rec,t){
@@ -493,7 +504,8 @@ var isTeacher=false, mode=SHEET_URL?'cloud':'local';
 var refreshers=[];
 var tabBtns={}, panels={};
 var PIN='', OWNER='';
-try{ PIN=localStorage.getItem(KEY+'-pin')||''; OWNER=localStorage.getItem(KEY+'-owner')||''; }catch(e){}
+var LOGGED=false, PUSHED=0;
+try{ PIN=localStorage.getItem(KEY+'-pin')||''; OWNER=localStorage.getItem(KEY+'-owner')||''; PUSHED=+localStorage.getItem(KEY+'-pushed')||0; }catch(e){}
 
 /* ---------- 저장 (구글 시트) ---------- */
 function api(body){
@@ -518,19 +530,22 @@ function idKey(){ return S.name+'|'+PIN; }
 function ready(){ return validName()&&validPin(); }
 function committed(){ return ready()&&OWNER===idKey(); }
 function nameUI(){
-  var bad=S.name.length>0&&!validName(), badP=PIN.length>0&&!validPin();
+  var nv=document.getElementById('name').value, pv=document.getElementById('pin').value;
+  var bad=nv.length>0&&!/^\d{4}[가-힣]{2,5}$/.test(nv), badP=pv.length>0&&!/^\d{4}$/.test(pv);
   var inp=document.getElementById('name'), pin=document.getElementById('pin'), hint=document.getElementById('namehint');
   inp.style.borderColor=bad?'var(--bad)':''; pin.style.borderColor=badP?'var(--bad)':'';
   hint.style.color=(bad||badP)?'var(--bad)':'';
   hint.textContent=bad?'형식이 달라요. 학번 4자리 뒤에 이름을 붙여서 써 주세요. 예: 3401김유진':
-    (badP?'번호는 숫자 4자리로 써 주세요.':'학번이름과, 내가 정한 숫자 4자리를 써 주세요. 다른 기기에서 이어 할 때 같은 번호가 필요해요.');
+    (badP?'번호는 숫자 4자리로 써 주세요.':'처음이면 내가 쓸 숫자 4자리를 정해서 로그인하세요. 다음부터 같은 번호로 로그인하면 이어서 할 수 있어요.');
 }
 function setSync(state){
   var m={connecting:['선생님 저장소에 연결 중','s-wait'],saving:['저장 중','s-wait'],
     cloud:['선생님께 저장됨','s-ok'],
-    needid:['학번이름과 번호 4자리를 입력하면 선생님께 저장됩니다','s-warn'],
-    pinbad:['이 학번이름은 다른 번호로 저장되어 있어요. 번호를 확인해 주세요','s-warn'],
-    offline:['저장하지 못했어요. 인터넷 연결을 확인해 주세요 (잠시 뒤 다시 시도)','s-warn'],
+    saved:['이 컴퓨터에 저장됨','s-ok'],
+    synced:['자동 저장됨 · 다른 컴퓨터에서 로그인해도 이어서 할 수 있어요','s-ok'],
+    needid:['로그인하면 하던 내용이 자동으로 저장돼요','s-warn'],
+    pinbad:['번호가 맞지 않아요. 처음 정한 번호 4자리를 확인해 주세요','s-warn'],
+    offline:['인터넷이 끊겨 이 컴퓨터에만 저장 중이에요 (연결되면 자동 저장)','s-warn'],
     local:['이 기기에만 저장됨','s-warn']}[state];
   var box=document.getElementById('sync'); box.className='sync '+m[1];
   document.getElementById('synctxt').textContent=m[0];
@@ -546,54 +561,113 @@ function showCode(){
   document.getElementById('codeta').value=makeCode();
 }
 function saveLocal(){
-  try{ localStorage.setItem(KEY,JSON.stringify(S)); localStorage.setItem(KEY+'-pin',PIN); localStorage.setItem(KEY+'-owner',OWNER); }catch(e){}
+  try{ localStorage.setItem(KEY,JSON.stringify(S)); localStorage.setItem(KEY+'-pin',PIN); localStorage.setItem(KEY+'-owner',OWNER); localStorage.setItem(KEY+'-pushed',String(PUSHED)); }catch(e){}
 }
-var saveTimer=0, retryTimer=0, pushing=false, again=false;
-function pushCloud(){
-  if(mode!=='cloud'||!committed()) return;
-  if(pushing){again=true;return;}
-  pushing=true; clearTimeout(retryTimer);
-  api({action:'save',name:S.name,pin:PIN,rec:S}).then(function(res){
-    if(res&&res.ok){ setSync('cloud'); document.getElementById('codebox').hidden=true; }
-    else if(res&&res.error==='pin'){ OWNER=''; saveLocal(); setSync('pinbad'); }
-    else { setSync('offline'); showCode(); retryTimer=setTimeout(pushCloud,15000); }
-  }).catch(function(){
-    setSync('offline'); showCode(); retryTimer=setTimeout(pushCloud,15000);
-  }).then(function(){
-    pushing=false;
-    if(again){again=false; pushCloud();}
-  });
+/* 진행 상황은 이 컴퓨터(브라우저)에 자동 저장하고, 선생님께는 탭마다 [제출하기]로 보낸다 */
+/* 학번이름 + 번호로 로그인하면, 하던 내용이 선생님 저장소에도 자동 저장되어 어느 컴퓨터에서든 이어서 할 수 있다 */
+function loginUI(){
+  var lb=document.getElementById('loginbox'), gb=document.getElementById('loggedbox');
+  lb.hidden=LOGGED; gb.hidden=!LOGGED;
+  document.getElementById('whoname').textContent=S.name;
+  refreshers.forEach(function(f){ if(f.isSub) f(); });
 }
-/* 이름과 번호가 정해지면 선생님 저장소에서 이어 하기 */
-var committing=false;
-function commit(){
-  if(mode!=='cloud'||PAGE!=='student') return;
-  if(!ready()){ setSync('needid'); return; }
-  if(committed()){ pushCloud(); return; }
-  var id=idKey();
-  if(OWNER&&OWNER!==id&&S.updatedAt>0){
-    var prev=OWNER.split('|')[0];
-    if(prev!==S.name){
-      if(!window.confirm('이 기기에는 '+prev+' 학생의 기록이 있어요.\n'+S.name+'(으)로 새로 시작할까요?\n(취소를 누르면 원래 이름으로 돌아갑니다)')){
-        S.name=prev; PIN=OWNER.split('|')[1]||''; applyState(); saveLocal(); commit(); return;
-      }
-      var nm=S.name; S=blank(); S.name=nm; applyState();
-    }
+var logging=false;
+function login(silent){
+  if(PAGE!=='student'||logging) return;
+  var nv=document.getElementById('name').value.trim(), pv=document.getElementById('pin').value;
+  if(!/^\d{4}[가-힣]{2,5}$/.test(nv)||!/^\d{4}$/.test(pv)){ nameUI(); if(!silent) document.getElementById('name').focus(); return; }
+  var id=nv+'|'+pv;
+  if(OWNER&&OWNER.split('|')[0]!==nv){
+    if(S.updatedAt>PUSHED&&S.updatedAt>0&&!window.confirm('이 컴퓨터에 '+OWNER.split('|')[0]+' 학생이 저장하지 못한 기록이 있어요.\n지우고 '+nv+'(으)로 로그인할까요?')) return;
+    S=blank(); PUSHED=0;
   }
-  if(committing) return;
-  committing=true; setSync('connecting');
-  api({action:'load',name:S.name,pin:PIN}).then(function(res){
+  function done(){
+    S.name=nv; PIN=pv; OWNER=id; LOGGED=true; saveLocal(); applyState(); loginUI();
+    try{ localStorage.removeItem(KEY+'-out'); }catch(e){}
+  }
+  if(mode!=='cloud'){ done(); setSync('local'); return; }
+  logging=true; var btn=document.getElementById('loginbtn'); btn.disabled=true; setSync('connecting');
+  api({action:'draftLoad',name:nv,pin:pv}).then(function(res){
     if(res&&res.ok){
-      if(res.rec){
-        var c=norm(res.rec);
-        if(c.updatedAt>S.updatedAt){ var nm=S.name; S=c; S.name=nm; applyState(); }
-      }
-      OWNER=idKey(); saveLocal();
-      if(S.updatedAt>0) pushCloud(); else setSync('cloud');
-    } else if(res&&res.error==='pin'){ setSync('pinbad'); }
-    else { setSync('offline'); showCode(); }
-  }).catch(function(){ setSync('offline'); showCode(); retryTimer=setTimeout(commit,15000); })
-  .then(function(){ committing=false; });
+      if(res.rec){ var c=norm(res.rec); if(c.updatedAt>S.updatedAt){ S=c; PUSHED=c.updatedAt; } }
+      done();
+      if(S.updatedAt>PUSHED) pushDraft(); else setSync('synced');
+    } else if(res&&res.error==='pin'){ setSync('pinbad'); document.getElementById('pin').value=''; document.getElementById('pin').focus(); }
+    else { done(); setSync('offline'); }
+  }).catch(function(){ done(); setSync('offline'); retryTimer=setTimeout(pushDraft,15000); })
+  .then(function(){ logging=false; btn.disabled=false; });
+}
+var pushTimer=0, retryTimer=0, pushing=false, again=false;
+function pushDraft(){
+  if(mode!=='cloud'||!LOGGED) return Promise.resolve(false);
+  if(pushing){ again=true; return Promise.resolve(false); }
+  pushing=true; clearTimeout(retryTimer);
+  var at=S.updatedAt;
+  return api({action:'draftSave',name:S.name,pin:PIN,rec:S}).then(function(res){
+    if(res&&res.ok){ PUSHED=Math.max(PUSHED,at); saveLocal(); setSync(S.updatedAt>PUSHED?'saving':'synced'); return true; }
+    if(res&&res.error==='pin'){ setSync('pinbad'); return false; }
+    setSync('offline'); retryTimer=setTimeout(pushDraft,15000); return false;
+  }).catch(function(){ setSync('offline'); retryTimer=setTimeout(pushDraft,15000); return false; })
+  .then(function(ok){ pushing=false; if(again){ again=false; pushDraft(); } return ok; });
+}
+function logout(){
+  var go=function(){
+    clearTimeout(pushTimer); clearTimeout(retryTimer);
+    LOGGED=false; document.getElementById('pin').value='';
+    try{ localStorage.setItem(KEY+'-out','1'); }catch(e){}
+    loginUI(); setSync('needid');
+  };
+  if(mode==='cloud'&&S.updatedAt>PUSHED){ setSync('saving'); pushDraft().then(go); }
+  else go();
+}
+function tabHash(t){ return hashName(JSON.stringify(S[t])); }
+function subState(t){
+  if(!S.sub[t]) return 'none';
+  return S.subHash[t]===tabHash(t)?'same':'changed';
+}
+function submitTab(t){
+  return api({action:'submit',name:S.name,pin:PIN,tab:t,data:S[t],updatedAt:S.updatedAt}).then(function(res){
+    if(res&&res.ok){
+      S.sub[t]=res.at||Date.now(); S.subHash[t]=tabHash(t); S.updatedAt=Date.now(); saveLocal(); pushDraft();
+      return {ok:true};
+    }
+    return {ok:false,error:res&&res.error||'store'};
+  }).catch(function(){ return {ok:false,error:'net'}; });
+}
+function fmtSub(ms){ return new Date(ms).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function buildSubmit(t){
+  var st=h('p',{class:'goal'}), msg=h('p',{class:'msg',role:'status'});
+  var btn=h('button',{class:'btn primary',type:'button'},'선생님께 제출하기');
+  var box=h('div',{class:'block subbox'},h('h2',{},'선생님께 제출하기'),st,h('div',{class:'ctrl',style:'margin-top:10px'},btn),msg);
+  var busy=false;
+  function r(){
+    box.classList.remove('subok','subwarn');
+    if(mode!=='cloud'){
+      st.textContent='지금은 선생님 저장소가 연결되어 있지 않아요. 아래 버튼을 눌러 제출 코드를 복사해 선생님께 보내 주세요.';
+      btn.textContent='제출 코드 보기'; btn.disabled=false; return;
+    }
+    if(!LOGGED){ st.textContent='맨 위에서 먼저 로그인하세요.'; btn.textContent='선생님께 제출하기'; btn.disabled=true; return; }
+    btn.disabled=busy;
+    var ss=subState(t);
+    if(ss==='none'){ st.textContent='아직 제출하지 않았어요. 이 활동을 마치면 제출하세요.'+(isDone(S,t)?'':' (다 끝나지 않았어도 제출할 수 있어요)'); btn.textContent='선생님께 제출하기'; }
+    else if(ss==='same'){ box.classList.add('subok'); st.textContent='제출 완료 · '+fmtSub(S.sub[t]); btn.textContent='다시 제출하기'; }
+    else { if(!busy) msg.textContent=''; box.classList.add('subwarn'); st.textContent='제출한 뒤('+fmtSub(S.sub[t])+')에 바뀐 내용이 있어요. 다시 제출해 주세요.'; btn.textContent='다시 제출하기'; }
+  }
+  btn.addEventListener('click',function(){
+    if(mode!=='cloud'){ showCode(); var cb=document.getElementById('codebox'); cb.open=true; cb.scrollIntoView({block:'center'}); return; }
+    if(!LOGGED||busy) return;
+    if(!isDone(S,t)&&!window.confirm('아직 끝나지 않은 활동이나 문항이 있어요.\n지금까지 한 내용으로 제출할까요? (나중에 다시 제출할 수 있어요)')) return;
+    busy=true; r(); msg.textContent='제출하는 중…';
+    submitTab(t).then(function(res){
+      busy=false;
+      msg.textContent=res.ok?'제출했어요. 선생님 화면에서 볼 수 있어요.':
+        (res.error==='pin'?'이 학번이름은 다른 번호로 제출된 적이 있어요. 번호를 확인해 주세요.':
+         res.error==='name'?'학번이름과 번호 형식을 확인해 주세요.':'제출하지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요.');
+      refreshers.forEach(function(f){f();});
+    });
+  });
+  r.isSub=true; refreshers.push(r); r();
+  return box;
 }
 function touch(){
   S.updatedAt=Date.now();
@@ -601,12 +675,13 @@ function touch(){
   refreshTabs();
   if(PAGE!=='student') return;
   if(mode==='cloud'){
-    if(committed()){ setSync('saving'); clearTimeout(saveTimer); saveTimer=setTimeout(pushCloud,1500); }
-    else if(!ready()){ setSync('needid'); }
-  } else {
-    document.getElementById('codeta').value=makeCode();
-  }
+    if(LOGGED){ setSync('saving'); clearTimeout(pushTimer); pushTimer=setTimeout(pushDraft,1500); }
+    else setSync('needid');
+  } else document.getElementById('codeta').value=makeCode();
+  refreshSubs();
 }
+var subTimer=0;
+function refreshSubs(){ clearTimeout(subTimer); subTimer=setTimeout(function(){ refreshers.forEach(function(f){ if(f.isSub) f(); }); },250); }
 function refreshTabs(){
   TABS.forEach(function(t){
     var b=tabBtns[t.id]; if(!b) return;
@@ -1540,7 +1615,7 @@ function buildDash(){
     if(!parts.length) return;
     if(!dashImport){ importMsg.textContent='저장소에 연결되지 않아 추가할 수 없습니다.'; return; }
     var recs=[], bad=0;
-    parts.forEach(function(x){ var r=decode(x); if(r) recs.push(r); else bad++; });
+    parts.forEach(function(x){ var r=decode(x); if(r){ TABS.forEach(function(T){ if(!r.sub[T.id]&&hasAct(r,T.id)) r.sub[T.id]=r.updatedAt||Date.now(); }); recs.push(r); } else bad++; });
     if(!recs.length){ importMsg.textContent='읽을 수 있는 코드가 없습니다. 코드 전체를 복사했는지 확인해 주세요.'; return; }
     importBtn.disabled=true; importMsg.textContent='추가하는 중…';
     dashImport(recs).then(function(n){
@@ -1556,7 +1631,8 @@ function buildDash(){
   }
   function fmtTime(ms){ return ms?new Date(ms).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'–'; }
   function tries(rec){ var n=0; TABS.forEach(function(T){ var t=T.id; Object.keys(rec[t].q).forEach(function(k){ n+=(rec[t].q[k]||[]).length; }); }); return n; }
-  function pill(s){ return h('span',{class:'pill'+(s?' s'+s:'')},['미시작','진행 중','완료'][s]); }
+  function pill(s){ return h('span',{class:'pill'+(s?' s'+s:'')},['미제출','제출·진행 중','제출·완료'][s]); }
+  function dState(rec,t){ return (rec.sub&&rec.sub[t])?(isDone(rec,t)?2:1):0; }
   function qchip(q,hist){
     if(!hist||!hist.length) return '–';
     if(qOk(q,hist)) return hist.length===1?'첫 시도 정답':hist.length+'번째에 정답';
@@ -1575,7 +1651,9 @@ function buildDash(){
   function detail(rec){
     var out=h('div',{class:'stubody'});
     TABS.forEach(function(T){
-      var t=T.id, x=rec[t], col=h('div',{},h('h3',{},T.label));
+      var t=T.id, x=rec[t], col=h('div',{},h('h3',{},T.label),
+        h('p',{style:'font-weight:500;color:'+((rec.sub&&rec.sub[t])?'var(--ok)':'var(--muted)')},(rec.sub&&rec.sub[t])?'제출 '+fmtTime(rec.sub[t]):'아직 제출하지 않음'));
+      if(!(rec.sub&&rec.sub[t])){ out.append(col); return; }
       if(t==='t1'){
         col.append(h('p',{},'고정한 현 '+x.chords+'개 · 중심 O 확인 '+(x.revealed?'함':'안 함')));
         col.append(h('p',{},'성질 ② 확인 기록 '+x.chk.length+'개'+(x.chk.length?' ('+x.chk.map(function(r){return 'AM '+f2(r.AM)+' / BM '+f2(r.BM);}).join(', ')+')':'')));
@@ -1656,18 +1734,19 @@ function buildDash(){
         it.forEach(function(r){ allQ.forEach(function(x){ var hist=r.rec[x[0]].q[x[1].k]; if(hist&&hist.length){ tried++; if(firstOk(x[1],hist)) first++; } }); });
         tb.append(h('tr',{class:'click',tabindex:0,onclick:function(){setCls(k);},onkeydown:function(e){ if(e.key==='Enter') setCls(k); }},
           h('td',{},groups[k].label),h('td',{},n+'명'),
-          TABS.map(function(T){ var d=it.filter(function(r){return isDone(r.rec,T.id);}).length; return h('td',{},pct(d,n)+'%'); }),
+          TABS.map(function(T){ var d=it.filter(function(r){return dState(r.rec,T.id)>0;}).length; return h('td',{},pct(d,n)+'%'); }),
           h('td',{},tried?pct(first,tried)+'%':'–')));
       });
       root.append(h('div',{class:'block'},h('h2',{},'반별 비교'),
-        h('p',{class:'goal'},'활동별 완료한 학생 비율과, 답한 문항 전체의 첫 시도 정답률입니다. 반을 누르면 그 반만 볼 수 있습니다.'),
+        h('p',{class:'goal'},'활동별 제출한 학생 비율과, 답한 문항 전체의 첫 시도 정답률입니다. 반을 누르면 그 반만 볼 수 있습니다.'),
         h('div',{class:'tblwrap'},h('table',{class:'tbl cmp'},h('thead',{},h('tr',{},h('th',{},'반'),h('th',{},'학생'),TABS.map(function(T){return h('th',{},T.label);}),h('th',{},'첫 시도 정답률'))),tb))));
     }
 
-    var counts=TABS.map(function(T){ return rs.filter(function(r){return isDone(r.rec,T.id);}).length; });
+    var counts=TABS.map(function(T){ return rs.filter(function(r){return dState(r.rec,T.id)>0;}).length; });
+    var dones=TABS.map(function(T){ return rs.filter(function(r){return dState(r.rec,T.id)===2;}).length; });
     var sum=h('div',{class:'sumgrid'},h('div',{class:'cell'},h('small',{},'기록한 학생'),h('b',{},N+'명')));
     TABS.forEach(function(T,i){
-      sum.append(h('div',{class:'cell'},h('small',{},T.label+' 완료'),h('b',{},counts[i]+' / '+N),h('div',{class:'meter'},h('span',{style:'width:'+pct(counts[i],N)+'%'}))));
+      sum.append(h('div',{class:'cell'},h('small',{},T.label+' 제출'),h('b',{},counts[i]+' / '+N),h('small',{},'모두 완료 '+dones[i]+'명'),h('div',{class:'meter'},h('span',{style:'width:'+pct(counts[i],N)+'%'}))));
     });
     root.append(h('div',{class:'block'},h('h2',{},'요약 · '+scope),sum));
     var qb=h('div',{class:'block'},h('h2',{},'문항별 첫 시도 정답률 · '+scope),
@@ -1696,7 +1775,7 @@ function buildDash(){
       d.addEventListener('toggle',function(){ openSet[r.id]=d.open; });
       d.append(h('summary',{},h('div',{class:'stusum'},
         h('span',{class:'nm'},r.rec.name.trim()||'(이름 없음)'),
-        TABS.map(function(T){return h('span',{},pill(tabState(r.rec,T.id)));}),
+        TABS.map(function(T){return h('span',{},pill(dState(r.rec,T.id)));}),
         h('span',{class:'num'},tries(r.rec)+'회'),h('span',{class:'num'},fmtTime(r.rec.updatedAt)))));
       d.append(h('p',{class:'sub',style:'margin:0;padding:0 12px 6px'},'학생 번호(4자리): '+(r.pin||'–')+' · 학생이 번호를 잊었을 때 알려 주세요.'));
       d.append(detail(r.rec));
@@ -1730,6 +1809,10 @@ function addTab(id,label,panel,withDot){
   document.getElementById('tabs').append(b);
   document.getElementById('view').append(panel);
   tabBtns[id]=b; panels[id]=panel;
+  if(withDot&&PAGE==='student'){
+    var pn=panel.querySelector('.panel'); if(pn) pn.append(buildSubmit(id));
+    var pp=panel.querySelector('.proofpage'); if(pp) pp.append(buildSubmit(id));
+  }
 }
 addTab('t1','수직이등분선',buildT1(),true);
 addTab('t2','거리와 길이',buildT2(),true);
@@ -1745,15 +1828,17 @@ pinIn.value=PIN;
 nameIn.addEventListener('input',function(){
   var v=nameIn.value.replace(/\s+/g,'');
   if(v!==nameIn.value) nameIn.value=v;
-  S.name=v; nameUI(); saveLocal(); if(mode==='cloud'&&!committed()) setSync(ready()?'connecting':'needid');
+  nameUI();
 });
-nameIn.addEventListener('change',commit);
 pinIn.addEventListener('input',function(){
   var v=pinIn.value.replace(/\D/g,'').slice(0,4);
   if(v!==pinIn.value) pinIn.value=v;
-  PIN=v; nameUI(); saveLocal();
-  if(validPin()) commit(); else if(mode==='cloud') setSync('needid');
+  nameUI();
 });
+[nameIn,pinIn].forEach(function(x){ x.addEventListener('keydown',function(e){ if(e.key==='Enter') login(); }); });
+document.getElementById('loginbtn').addEventListener('click',function(){ login(); });
+document.getElementById('logoutbtn').addEventListener('click',logout);
+window.addEventListener('pagehide',function(){ if(LOGGED&&mode==='cloud'&&S.updatedAt>PUSHED){ try{ navigator.sendBeacon(SHEET_URL,JSON.stringify({action:'draftSave',name:S.name,pin:PIN,rec:S})); }catch(e){} } });
 nameUI();
 document.getElementById('copycode').addEventListener('click',function(){
   var ta=document.getElementById('codeta'), msg=document.getElementById('copymsg');
@@ -1764,7 +1849,7 @@ document.getElementById('copycode').addEventListener('click',function(){
   } else fallback();
 });
 
-function applyState(){ nameIn.value=S.name; pinIn.value=PIN; nameUI();refreshers.forEach(function(f){f();}); refreshTabs(); }
+function applyState(){ nameIn.value=S.name; pinIn.value=PIN; nameUI(); document.getElementById('whoname').textContent=S.name;refreshers.forEach(function(f){f();}); refreshTabs(); }
 
 var dashImport=null;
 function sha256hex(str){
@@ -1871,13 +1956,16 @@ document.addEventListener('keydown',function(e){
 function init(){
   if(PAGE==='teacher'){ startTeacher(); return; }
   if(mode!=='cloud'){
-    setSync('local'); showCode();
+    setSync('local'); showCode(); refreshers.forEach(function(f){f();});
     var cb=document.getElementById('codebox'); cb.open=true;
     cb.querySelector('summary').textContent='선생님께 낼 제출 코드';
     cb.querySelector('p').textContent='활동을 마치면 아래 코드를 복사해서 선생님이 알려 준 곳(클래스룸, 패들렛 등)에 붙여 넣어 내세요. 활동을 더 하면 코드가 바뀌니, 마지막에 다시 복사해 주세요.';
+    if(OWNER&&OWNER===S.name+'|'+PIN){ LOGGED=true; loginUI(); }
     return;
   }
-  commit();
+  loginUI();
+  var out=false; try{ out=localStorage.getItem(KEY+'-out')==='1'; }catch(e){}
+  if(!out&&OWNER&&PIN&&OWNER===S.name+'|'+PIN) login(true); else { if(out) pinIn.value=''; setSync('needid'); }
 }
 init();
 })();
